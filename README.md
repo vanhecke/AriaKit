@@ -74,8 +74,9 @@ libaria2 reports only the error code, so the exact HTTP status is not shown.
 Exit status: 0 when every download succeeded, 1 if any failed, 64 for a bad
 option.
 
-aria2 reserves a file's full size on disk when its download starts, and a
-stopped download leaves a `.aria2` control file next to the partial file.
+aria2 reserves a file's full size on disk when its download starts. A
+stopped download leaves a `.aria2` control file next to the partial file;
+adding the same source again with the same `--dir` resumes where it stopped.
 
 ## The library
 
