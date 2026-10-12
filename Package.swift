@@ -9,9 +9,6 @@ let swiftSettings: [SwiftSetting] = [
   .swiftLanguageMode(.v6),
 ]
 
-/// libaria2 is C++. Every module that imports AriaKit needs this setting too.
-let cxxInterop: [SwiftSetting] = [.interoperabilityMode(.Cxx)]
-
 let package = Package(
   name: "AriaKit",
   platforms: [.macOS(.v15)],
@@ -36,7 +33,7 @@ let package = Package(
     .target(
       name: "AriaKit",
       dependencies: ["AriaShim"],
-      swiftSettings: swiftSettings + cxxInterop,
+      swiftSettings: swiftSettings,
     ),
     .executableTarget(
       name: "AriaKitCLI",
@@ -45,19 +42,17 @@ let package = Package(
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Configuration", package: "swift-configuration"),
       ],
-      exclude: ["AGENTS.md"],
-      swiftSettings: swiftSettings + cxxInterop,
+      swiftSettings: swiftSettings,
     ),
     .testTarget(
       name: "AriaKitTests",
       dependencies: ["AriaKit"],
-      swiftSettings: swiftSettings + cxxInterop,
+      swiftSettings: swiftSettings,
     ),
     .testTarget(
       name: "AriaKitCLITests",
       dependencies: ["AriaKitCLI"],
-      exclude: ["AGENTS.md"],
-      swiftSettings: swiftSettings + cxxInterop,
+      swiftSettings: swiftSettings,
     ),
   ],
 )

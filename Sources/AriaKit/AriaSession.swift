@@ -54,13 +54,14 @@ public final class AriaSession: Sendable {
   ///   - options: Per-download aria2 options, such as `["out": "name.iso"]`.
   public func add(_ urls: [URL], options: [String: String] = [:]) async throws -> DownloadID {
     try await perform { session in
-      var uris = ariashim.StringList()
+      let uris = ariashim_urisNew()
+      defer { ariashim_urisFree(uris) }
       for url in urls {
-        ariashim.appendString(&uris, url.absoluteString)
+        ariashim_urisAppend(uris, url.absoluteString)
       }
-      let result = ariashim.addUri(session, uris, Self.keyVals(options))
-      try Self.check(result.code)
-      return DownloadID(rawValue: result.gid)
+      var gid: UInt64 = 0
+      try Self.withOptions(options) { try Self.check(ariashim_addUri(session, uris, $0, &gid)) }
+      return DownloadID(rawValue: gid)
     }
   }
 
@@ -75,9 +76,9 @@ public final class AriaSession: Sendable {
   ///   - options: Per-download aria2 options, such as `["seed-time": "0"]`.
   public func addTorrent(_ torrentFile: URL, options: [String: String] = [:]) async throws -> DownloadID {
     try await perform { session in
-      let result = ariashim.addTorrent(session, torrentFile.path, Self.keyVals(options))
-      try Self.check(result.code)
-      return DownloadID(rawValue: result.gid)
+      var gid: UInt64 = 0
+      try Self.withOptions(options) { try Self.check(ariashim_addTorrent(session, torrentFile.path, $0, &gid)) }
+      return DownloadID(rawValue: gid)
     }
   }
 
@@ -89,47 +90,53 @@ public final class AriaSession: Sendable {
   /// - Returns: One download per file, in document order.
   public func addMetalink(_ metalinkFile: URL, options: [String: String] = [:]) async throws -> [DownloadID] {
     try await perform { session in
-      let result = ariashim.addMetalink(session, metalinkFile.path, Self.keyVals(options))
-      try Self.check(result.code)
-      return (0 ..< ariashim.addedCount(result)).map { DownloadID(rawValue: ariashim.addedGid(result, $0)) }
+      var gids: UnsafeMutablePointer<UInt64>?
+      var count: Int32 = 0
+      defer { free(gids) }
+      try Self.withOptions(options) {
+        try Self.check(ariashim_addMetalink(session, metalinkFile.path, $0, &gids, &count))
+      }
+      return UnsafeBufferPointer(start: gids, count: Int(count)).map { DownloadID(rawValue: $0) }
     }
   }
 
   /// Pauses a download. It keeps its place and resumes with ``resume(_:)``.
   public func pause(_ id: DownloadID) async throws {
-    try await perform { session in try Self.check(ariashim.pauseDownload(session, id.rawValue, false)) }
+    try await perform { session in try Self.check(ariashim_pauseDownload(session, id.rawValue, false)) }
   }
 
   /// Resumes a paused download.
   public func resume(_ id: DownloadID) async throws {
-    try await perform { session in try Self.check(ariashim.unpauseDownload(session, id.rawValue)) }
+    try await perform { session in try Self.check(ariashim_unpauseDownload(session, id.rawValue)) }
   }
 
   /// Stops and removes a download. Its status remains readable as ``DownloadStatus/State/removed``.
   public func remove(_ id: DownloadID) async throws {
-    try await perform { session in try Self.check(ariashim.removeDownload(session, id.rawValue, false)) }
+    try await perform { session in try Self.check(ariashim_removeDownload(session, id.rawValue, false)) }
   }
 
   /// Returns a progress snapshot of a download.
   public func status(of id: DownloadID) async throws -> DownloadStatus {
     try await perform { session in
-      let snapshot = ariashim.snapshot(session, id.rawValue)
-      guard snapshot.found, let state = DownloadStatus.State(rawValue: snapshot.status) else {
+      guard let snapshot = ariashim_snapshotNew(session, id.rawValue) else { throw AriaError.unknownDownload(id) }
+      defer { ariashim_snapshotFree(snapshot) }
+      guard let state = DownloadStatus.State(rawValue: ariashim_snapshotStatus(snapshot)) else {
         throw AriaError.unknownDownload(id)
       }
+      let following = ariashim_snapshotFollowing(snapshot)
       return DownloadStatus(
         id: id,
         state: state,
-        totalLength: snapshot.totalLength,
-        completedLength: snapshot.completedLength,
-        downloadSpeed: Int(snapshot.downloadSpeed),
-        uploadSpeed: Int(snapshot.uploadSpeed),
-        errorCode: Int(snapshot.errorCode),
-        directory: String(cString: ariashim.snapshotDirectory(snapshot)),
-        files: (0 ..< ariashim.snapshotFileCount(snapshot)).map { String(cString: ariashim.snapshotFile(snapshot, $0)) },
-        following: snapshot.following == 0 ? nil : DownloadID(rawValue: snapshot.following),
-        followedBy: (0 ..< ariashim.snapshotFollowedByCount(snapshot)).map {
-          DownloadID(rawValue: ariashim.snapshotFollowedBy(snapshot, $0))
+        totalLength: ariashim_snapshotTotalLength(snapshot),
+        completedLength: ariashim_snapshotCompletedLength(snapshot),
+        downloadSpeed: Int(ariashim_snapshotDownloadSpeed(snapshot)),
+        uploadSpeed: Int(ariashim_snapshotUploadSpeed(snapshot)),
+        errorCode: Int(ariashim_snapshotErrorCode(snapshot)),
+        directory: String(cString: ariashim_snapshotDirectory(snapshot)),
+        files: (0 ..< ariashim_snapshotFileCount(snapshot)).map { String(cString: ariashim_snapshotFile(snapshot, $0)) },
+        following: following == 0 ? nil : DownloadID(rawValue: following),
+        followedBy: (0 ..< ariashim_snapshotFollowedByCount(snapshot)).map {
+          DownloadID(rawValue: ariashim_snapshotFollowedBy(snapshot, $0))
         },
       )
     }
@@ -153,12 +160,14 @@ public final class AriaSession: Sendable {
     guard code == 0 else { throw AriaError.operationFailed(code: Int(code)) }
   }
 
-  private static func keyVals(_ options: [String: String]) -> ariashim.KeyVals {
-    var keyVals = ariashim.KeyVals()
+  /// Passes `options` to `body` as an `AriaShimOptions` handle, freed afterwards.
+  private static func withOptions<T>(_ options: [String: String], _ body: (OpaquePointer) throws -> T) rethrows -> T {
+    let handle = ariashim_optionsNew()
+    defer { ariashim_optionsFree(handle) }
     for (key, value) in options.sorted(by: { $0.key < $1.key }) {
-      ariashim.appendOption(&keyVals, key, value)
+      ariashim_optionsAppend(handle, key, value)
     }
-    return keyVals
+    return try body(handle)
   }
 
   /// Body of the session thread: owns the `aria2::Session` from creation to final.
@@ -168,18 +177,18 @@ public final class AriaSession: Sendable {
     events: AsyncStream<DownloadEvent>.Continuation,
     started: CheckedContinuation<Void, any Error>,
   ) {
-    guard ariashim.libraryInit() == 0 else {
+    guard ariashim_libraryInit() == 0 else {
       events.finish()
       isActive.store(false, ordering: .releasing)
       started.resume(throwing: AriaError.sessionCreationFailed)
       return
     }
     let sink = Unmanaged.passRetained(EventSink(continuation: events))
-    let callback: ariashim.EventCallback = { rawEvent, gid, context in
+    let callback: AriaShimEventCallback = { rawEvent, gid, context in
       guard let context, let event = DownloadEvent(rawEvent: rawEvent, id: DownloadID(rawValue: gid)) else { return }
       Unmanaged<EventSink>.fromOpaque(context).takeUnretainedValue().continuation.yield(event)
     }
-    guard let session = ariashim.sessionNew(keyVals(options), callback, sink.toOpaque()) else {
+    guard let session = withOptions(options, { ariashim_sessionNew($0, callback, sink.toOpaque()) }) else {
       sink.release()
       events.finish()
       isActive.store(false, ordering: .releasing)
@@ -200,15 +209,15 @@ public final class AriaSession: Sendable {
         batch = mailbox.waitForCommands(upTo: .milliseconds(10))
       }
       if !shutdownScheduled, mailbox.isShutdownRequested {
-        _ = ariashim.shutdown(session, false)
+        _ = ariashim_shutdown(session, false)
         shutdownScheduled = true
       }
-      if ariashim.runOnce(session) != 1 {
+      if ariashim_runOnce(session) != 1 {
         break
       }
     }
 
-    _ = ariashim.sessionFinal(session)
+    _ = ariashim_sessionFinal(session)
     sink.release()
     events.finish()
     isActive.store(false, ordering: .releasing)

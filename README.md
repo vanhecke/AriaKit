@@ -2,8 +2,8 @@
 
 Swift bindings to libaria2 and a live terminal downloader built on them.
 
-- **AriaKit**: a Swift library that runs aria2's download engine in-process
-  through Swift C++ interop. Async API, event stream, one engine thread.
+- **AriaKit**: a Swift library that runs aria2's download engine in-process.
+  Async API, event stream, one engine thread.
 - **ariakit**: a terminal downloader. Add URLs or torrent files while it runs;
   each one starts right away.
 
@@ -80,6 +80,21 @@ adding the same source again with the same `--dir` resumes where it stopped.
 
 ## The library
 
+Add it to your `Package.swift` (libaria2 must be installed first, see
+[Requirements](#requirements-for-a-package-that-depends-on-ariakit)):
+
+```swift
+dependencies: [
+  .package(url: "https://github.com/vanhecke/AriaKit.git", .upToNextMinor(from: "0.1.0")),
+],
+targets: [
+  .target(name: "MyTarget", dependencies: [.product(name: "AriaKit", package: "AriaKit")]),
+]
+```
+
+Releases are [semver](https://semver.org) tags. Before 1.0 a minor release
+(0.1 → 0.2) may change the API, hence `.upToNextMinor`.
+
 ```swift
 import AriaKit
 
@@ -133,12 +148,11 @@ Things to know:
   - macOS: Homebrew's `aria2` does not include the library. Build it with
     `./Scripts/libaria2.sh --prefix /usr/local` (or any prefix on
     `PKG_CONFIG_PATH`); dependencies:
-    `brew install pkgconf c-ares libssh2 sqlite openssl@3`.
+    `brew install pkgconf c-ares libssh2 sqlite openssl@3`. The script is in
+    your checkout after `swift package resolve`:
+    `.build/checkouts/AriaKit/Scripts/libaria2.sh --prefix …`.
   - Linux: `apt install libaria2-0-dev`.
-- `swiftSettings: [.interoperabilityMode(.Cxx)]` on every target that imports
-  AriaKit. Swift rejects a module built with C++ interop in a client that
-  does not enable it.
-- macOS 15 or later.
+- macOS 15 or later (or Linux), Swift 6.2 or later.
 
 ## Development
 

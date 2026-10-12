@@ -5,7 +5,7 @@ import Testing
 @Suite
 struct AppConfigTests {
   @Test
-  func defaultVersionIsZero() {
-    #expect(AppConfig().version == "0.0.0")
+  func defaultVersionIsSemanticVersion() {
+    #expect(AppConfig().version.wholeMatch(of: /\d+\.\d+\.\d+/) != nil)
   }
 }

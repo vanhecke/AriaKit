@@ -10,6 +10,3 @@ trim_trailing_whitespace = true
 
 [*.{yml,yaml,json,md}]
 indent_size = 2
-
-[*.entitlements]
-indent_size = 4

@@ -3,7 +3,7 @@ import Configuration
 /// Process configuration via `apple/swift-configuration`.
 public struct AppConfig: Sendable {
   public init(reader: ConfigReader = ConfigReader(provider: EnvironmentVariablesProvider())) {
-    version = reader.string(forKey: "APP_VERSION", default: "0.0.0")
+    version = reader.string(forKey: "APP_VERSION", default: "0.1.0")
     downloadDirectory = reader.string(forKey: "ARIAKIT_DIR")
   }
 

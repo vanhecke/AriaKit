@@ -2,7 +2,7 @@
 
 Swift bindings to libaria2 and a live terminal downloader built on them.
 
-Swift 6 SPM library (`AriaKit`) wrapping libaria2 through Swift C++ interop, plus
+Swift 6 SPM library (`AriaKit`) wrapping libaria2 through a C shim, plus
 the `ariakit` command-line tool. Not MainActor-by-default. GPL-2.0-or-later
 because it links libaria2.
 
@@ -18,8 +18,8 @@ Nested `AGENTS.md` files apply to their directory. MCP config is `.mcp.json`.
 - NEVER add Python. Scripts are `swift file.swift` (preferred) or bash.
 - NEVER call libaria2 off the session thread. All calls go through
   `AriaSession`'s mailbox; one session per process.
-- NEVER leak C++ types into AriaKit's public API. libaria2 access goes through
-  `Sources/AriaShim` free functions.
+- NEVER leak C++ into Swift. libaria2 access goes through the plain-C
+  `Sources/AriaShim` header, so no module (ours or downstream) needs C++ interop.
 - Tool: errors and usage to stderr, data to stdout. Exit 0 on success, 64 on
   usage (`EX_USAGE`).
 
@@ -76,18 +76,16 @@ Bias toward caution over speed. For a one-line fix, use judgment.
 
 ## MCP and Xcode issues
 
-Servers are declared in `.mcp.json` (mirrored in `opencode.json` and
-`.grok/config.toml`). Prefer them over raw `xcodebuild` / `swift test` / a web
-search when connected. If a server is missing, use the Commands table — do not
-stop. Tool names and session defaults: `AGENTS.mcp.md`.
+Servers are declared in `.mcp.json`. Prefer them over raw `xcodebuild` /
+`swift test` / a web search when connected. If a server is missing, use the
+Commands table — do not stop.
 
 When the `xcode` MCP is connected, call `XcodeListNavigatorIssues` after edits
 and **fix what it reports** on files you touched. Re-query until clean.
 
-When MCP is missing, or in CI: `./Scripts/issues.sh` (GUI can pass
-`--from-bundle build/AriaKit.xcresult`). That is the Issue navigator
-equivalent from a result bundle / `swift build` log. GitHub Actions prints
-file annotations. A green test run with a non-empty issues dump is not done.
+When MCP is missing, or in CI: `./Scripts/issues.sh`. That is the Issue
+navigator equivalent from the `swift build` log. GitHub Actions prints file
+annotations. A green test run with a non-empty issues dump is not done.
 
 
 ## Commands
@@ -105,7 +103,7 @@ file annotations. A green test run with a non-empty issues dump is not done.
 | Path | Holds |
 |---|---|
 | `Sources/Clibaria2` | System library: `pkg-config libaria2`. |
-| `Sources/AriaShim` | C++ shim over `aria2.h`: free functions, no virtual classes for Swift. |
+| `Sources/AriaShim` | C header (`extern "C"`, opaque handles) over `aria2.h`; C++ only in the `.cpp`. |
 | `Sources/AriaKit` | Library. `AriaSession` owns the libaria2 thread. Public API has DocC summaries. |
 | `Sources/AriaKitCLI` | `ariakit` tool: ArgumentParser command, live TUI / piped REPL. |
 | `Tests/AriaKitTests` | Swift Testing. Session tests use loopback only and stay serialized. |
@@ -118,8 +116,8 @@ file annotations. A green test run with a non-empty issues dump is not done.
   comments on every public declaration, methods named by side-effects.
 - One primary type per file; filename == type name.
 - Upcoming: `ExistentialAny`, `NonisolatedNonsendingByDefault`.
-- C++ interop (`.interoperabilityMode(.Cxx)`) is required in every module that
-  imports AriaKit, including downstream packages.
+- No C++ interop. Do not add `.interoperabilityMode(.Cxx)` or C++ types to
+  `AriaShim.h`: it would force every downstream target to enable it.
 - `print` is a lint error.
 
 ## Definition of Done

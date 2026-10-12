@@ -23,6 +23,7 @@ When you add a script:
 | `libaria2.sh` | Build libaria2 1.37.0 (pinned sha256) into `.deps/libaria2` or `--prefix`. No-op if built or on Linux. |
 | `env.sh` | `source` it: puts `.deps/libaria2` on `PKG_CONFIG_PATH`. |
 | `issues.sh` | `swift build` with warnings-as-errors, then `print-issues.swift --swift-log`. |
-| `print-issues.swift` | Parse xcresult JSON or a Swift diagnostic log. Exit 1 if errors/warnings. GitHub `::error` annotations. |
+| `print-issues.swift` | Parse a `swift build` diagnostic log. Exit 1 if errors/warnings. GitHub `::error` annotations. |
 | `post-edit-lint.swift` | Claude PostToolUse hook: SwiftLint the edited `.swift` file. Always exits 0. |
-| `doctor.sh` | Toolchain sanity: `swift`, SwiftLint, SwiftFormat. |
+| `release.sh` | `./Scripts/release.sh X.Y.Z`: checks tree/version, runs `ci.sh`, pushes the semver tag, creates the GitHub release. |
+| `github-settings.sh` | Applies GitHub security settings (fork-PR approval, rulesets, scanning). Idempotent; repo must be public. |

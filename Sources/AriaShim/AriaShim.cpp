@@ -1,15 +1,40 @@
 #include "AriaShim.h"
 
+#include <aria2/aria2.h>
+
 #include <signal.h>
+#include <algorithm>
+#include <cstdlib>
 #include <exception>
 #include <mutex>
+#include <string>
+#include <vector>
 
-namespace ariashim {
+struct AriaShimOptions {
+  aria2::KeyVals values;
+};
+
+struct AriaShimURIs {
+  std::vector<std::string> values;
+};
+
+struct AriaShimSnapshot {
+  int status;
+  std::int64_t totalLength;
+  std::int64_t completedLength;
+  int downloadSpeed;
+  int uploadSpeed;
+  int errorCode;
+  std::string dir;
+  std::vector<std::string> files;
+  std::uint64_t following;
+  std::vector<std::uint64_t> followedBy;
+};
 
 namespace {
 
 struct Bridge {
-  EventCallback callback;
+  AriaShimEventCallback callback;
   void* context;
 };
 
@@ -21,6 +46,9 @@ int trampoline(aria2::Session*, aria2::DownloadEvent event, aria2::A2Gid gid, vo
 
 // One session per process (libaria2 rule), so one bridge.
 Bridge* currentBridge = nullptr;
+
+// AriaShimSession is never defined: it is the aria2::Session under another name.
+aria2::Session* unwrap(AriaShimSession* session) { return reinterpret_cast<aria2::Session*>(session); }
 
 // C++ exceptions must not unwind into Swift: run `body`, or return `fallback` if it throws.
 template <typename Result, typename Body>
@@ -57,7 +85,9 @@ void ignoreSigpipeIfDefault() {
 
 } // namespace
 
-int libraryInit() {
+extern "C" {
+
+int ariashim_libraryInit(void) {
   // libaria2 crashes if re-initialized after libraryDeinit, so init once and never deinit.
   static std::once_flag once;
   static int code = 0;
@@ -68,13 +98,22 @@ int libraryInit() {
   return code;
 }
 
-void appendOption(KeyVals& options, const char* key, const char* value) {
-  options.emplace_back(key, value);
+AriaShimOptions* ariashim_optionsNew(void) { return new AriaShimOptions; }
+
+void ariashim_optionsAppend(AriaShimOptions* options, const char* key, const char* value) {
+  options->values.emplace_back(key, value);
 }
 
-void appendString(StringList& list, const char* value) { list.emplace_back(value); }
+void ariashim_optionsFree(AriaShimOptions* options) { delete options; }
 
-aria2::Session* sessionNew(const KeyVals& options, EventCallback callback, void* context) {
+AriaShimURIs* ariashim_urisNew(void) { return new AriaShimURIs; }
+
+void ariashim_urisAppend(AriaShimURIs* uris, const char* uri) { uris->values.emplace_back(uri); }
+
+void ariashim_urisFree(AriaShimURIs* uris) { delete uris; }
+
+AriaShimSession* ariashim_sessionNew(
+    const AriaShimOptions* options, AriaShimEventCallback callback, void* context) {
   auto* bridge = new Bridge{callback, context};
   aria2::SessionConfig config;
   config.keepRunning = true;
@@ -82,113 +121,149 @@ aria2::Session* sessionNew(const KeyVals& options, EventCallback callback, void*
   config.downloadEventCallback = trampoline;
   config.userData = bridge;
   aria2::Session* session =
-      guarded<aria2::Session*>(nullptr, [&] { return aria2::sessionNew(options, config); });
+      guarded<aria2::Session*>(nullptr, [&] { return aria2::sessionNew(options->values, config); });
   if (session == nullptr) {
     delete bridge;
     return nullptr;
   }
   currentBridge = bridge;
-  return session;
+  return reinterpret_cast<AriaShimSession*>(session);
 }
 
-int sessionFinal(aria2::Session* session) {
-  int code = guarded(-1, [&] { return aria2::sessionFinal(session); });
+int ariashim_sessionFinal(AriaShimSession* session) {
+  int code = guarded(-1, [&] { return aria2::sessionFinal(unwrap(session)); });
   delete currentBridge;
   currentBridge = nullptr;
   return code;
 }
 
-int runOnce(aria2::Session* session) {
-  return guarded(-1, [&] { return aria2::run(session, aria2::RUN_ONCE); });
+int ariashim_runOnce(AriaShimSession* session) {
+  return guarded(-1, [&] { return aria2::run(unwrap(session), aria2::RUN_ONCE); });
 }
 
-int shutdown(aria2::Session* session, bool force) {
-  return guarded(-1, [&] { return aria2::shutdown(session, force); });
+int ariashim_shutdown(AriaShimSession* session, bool force) {
+  return guarded(-1, [&] { return aria2::shutdown(unwrap(session), force); });
 }
 
-AddResult addUri(aria2::Session* session, const StringList& uris, const KeyVals& options) {
-  return guarded(AddResult{-1, 0}, [&] {
-    aria2::A2Gid gid = 0;
-    int code = aria2::addUri(session, &gid, uris, options);
+int ariashim_addUri(
+    AriaShimSession* session, const AriaShimURIs* uris, const AriaShimOptions* options, std::uint64_t* gid) {
+  return guarded(-1, [&] {
+    int code = aria2::addUri(unwrap(session), gid, uris->values, options->values);
     if (code == 0) {
-      startPromptly(session, gid);
+      startPromptly(unwrap(session), *gid);
     }
-    return AddResult{code, gid};
+    return code;
   });
 }
 
-AddResult addTorrent(aria2::Session* session, const char* torrentFile, const KeyVals& options) {
-  return guarded(AddResult{-1, 0}, [&] {
-    aria2::A2Gid gid = 0;
-    int code = aria2::addTorrent(session, &gid, torrentFile, options);
+int ariashim_addTorrent(
+    AriaShimSession* session, const char* torrentFile, const AriaShimOptions* options, std::uint64_t* gid) {
+  return guarded(-1, [&] {
+    int code = aria2::addTorrent(unwrap(session), gid, torrentFile, options->values);
     if (code == 0) {
-      startPromptly(session, gid);
+      startPromptly(unwrap(session), *gid);
     }
-    return AddResult{code, gid};
+    return code;
   });
 }
 
-AddManyResult addMetalink(aria2::Session* session, const char* metalinkFile, const KeyVals& options) {
-  return guarded(AddManyResult{-1, {}}, [&] {
-    std::vector<aria2::A2Gid> gids;
-    int code = aria2::addMetalink(session, &gids, metalinkFile, options);
-    for (aria2::A2Gid gid : gids) {
-      startPromptly(session, gid);
+int ariashim_addMetalink(
+    AriaShimSession* session,
+    const char* metalinkFile,
+    const AriaShimOptions* options,
+    std::uint64_t** gids,
+    int* count) {
+  *gids = nullptr;
+  *count = 0;
+  return guarded(-1, [&] {
+    std::vector<aria2::A2Gid> added;
+    int code = aria2::addMetalink(unwrap(session), &added, metalinkFile, options->values);
+    for (aria2::A2Gid gid : added) {
+      startPromptly(unwrap(session), gid);
     }
-    return AddManyResult{code, std::vector<std::uint64_t>(gids.begin(), gids.end())};
+    if (!added.empty()) {
+      *gids = static_cast<std::uint64_t*>(std::malloc(added.size() * sizeof(std::uint64_t)));
+      if (*gids == nullptr) {
+        return -1;
+      }
+      std::copy(added.begin(), added.end(), *gids);
+      *count = static_cast<int>(added.size());
+    }
+    return code;
   });
 }
 
-int addedCount(const AddManyResult& result) { return static_cast<int>(result.gids.size()); }
-
-std::uint64_t addedGid(const AddManyResult& result, int index) { return result.gids[index]; }
-
-int removeDownload(aria2::Session* session, std::uint64_t gid, bool force) {
-  return guarded(-1, [&] { return aria2::removeDownload(session, gid, force); });
+int ariashim_removeDownload(AriaShimSession* session, std::uint64_t gid, bool force) {
+  return guarded(-1, [&] { return aria2::removeDownload(unwrap(session), gid, force); });
 }
 
-int pauseDownload(aria2::Session* session, std::uint64_t gid, bool force) {
-  return guarded(-1, [&] { return aria2::pauseDownload(session, gid, force); });
+int ariashim_pauseDownload(AriaShimSession* session, std::uint64_t gid, bool force) {
+  return guarded(-1, [&] { return aria2::pauseDownload(unwrap(session), gid, force); });
 }
 
-int unpauseDownload(aria2::Session* session, std::uint64_t gid) {
-  return guarded(-1, [&] { return aria2::unpauseDownload(session, gid); });
+int ariashim_unpauseDownload(AriaShimSession* session, std::uint64_t gid) {
+  return guarded(-1, [&] { return aria2::unpauseDownload(unwrap(session), gid); });
 }
 
-Snapshot snapshot(aria2::Session* session, std::uint64_t gid) {
-  return guarded(Snapshot{}, [&] {
-    Snapshot result{};
-    aria2::DownloadHandle* handle = aria2::getDownloadHandle(session, gid);
+AriaShimSnapshot* ariashim_snapshotNew(AriaShimSession* session, std::uint64_t gid) {
+  return guarded<AriaShimSnapshot*>(nullptr, [&]() -> AriaShimSnapshot* {
+    aria2::DownloadHandle* handle = aria2::getDownloadHandle(unwrap(session), gid);
     if (handle == nullptr) {
-      return result;
+      return nullptr;
     }
-    result.found = true;
-    result.status = static_cast<int>(handle->getStatus());
-    result.totalLength = handle->getTotalLength();
-    result.completedLength = handle->getCompletedLength();
-    result.downloadSpeed = handle->getDownloadSpeed();
-    result.uploadSpeed = handle->getUploadSpeed();
-    result.errorCode = handle->getErrorCode();
-    result.dir = handle->getDir();
+    auto* result = new AriaShimSnapshot{};
+    result->status = static_cast<int>(handle->getStatus());
+    result->totalLength = handle->getTotalLength();
+    result->completedLength = handle->getCompletedLength();
+    result->downloadSpeed = handle->getDownloadSpeed();
+    result->uploadSpeed = handle->getUploadSpeed();
+    result->errorCode = handle->getErrorCode();
+    result->dir = handle->getDir();
     for (const aria2::FileData& file : handle->getFiles()) {
-      result.files.push_back(file.path);
+      result->files.push_back(file.path);
     }
-    result.following = handle->getFollowing();
+    result->following = handle->getFollowing();
     const std::vector<aria2::A2Gid>& followedBy = handle->getFollowedBy();
-    result.followedBy.assign(followedBy.begin(), followedBy.end());
+    result->followedBy.assign(followedBy.begin(), followedBy.end());
     aria2::deleteDownloadHandle(handle);
     return result;
   });
 }
 
-const char* snapshotDirectory(const Snapshot& snapshot) { return snapshot.dir.c_str(); }
+void ariashim_snapshotFree(AriaShimSnapshot* snapshot) { delete snapshot; }
 
-int snapshotFileCount(const Snapshot& snapshot) { return static_cast<int>(snapshot.files.size()); }
+int ariashim_snapshotStatus(const AriaShimSnapshot* snapshot) { return snapshot->status; }
 
-const char* snapshotFile(const Snapshot& snapshot, int index) { return snapshot.files[index].c_str(); }
+std::int64_t ariashim_snapshotTotalLength(const AriaShimSnapshot* snapshot) { return snapshot->totalLength; }
 
-int snapshotFollowedByCount(const Snapshot& snapshot) { return static_cast<int>(snapshot.followedBy.size()); }
+std::int64_t ariashim_snapshotCompletedLength(const AriaShimSnapshot* snapshot) {
+  return snapshot->completedLength;
+}
 
-std::uint64_t snapshotFollowedBy(const Snapshot& snapshot, int index) { return snapshot.followedBy[index]; }
+int ariashim_snapshotDownloadSpeed(const AriaShimSnapshot* snapshot) { return snapshot->downloadSpeed; }
 
-} // namespace ariashim
+int ariashim_snapshotUploadSpeed(const AriaShimSnapshot* snapshot) { return snapshot->uploadSpeed; }
+
+int ariashim_snapshotErrorCode(const AriaShimSnapshot* snapshot) { return snapshot->errorCode; }
+
+const char* ariashim_snapshotDirectory(const AriaShimSnapshot* snapshot) { return snapshot->dir.c_str(); }
+
+int ariashim_snapshotFileCount(const AriaShimSnapshot* snapshot) {
+  return static_cast<int>(snapshot->files.size());
+}
+
+const char* ariashim_snapshotFile(const AriaShimSnapshot* snapshot, int index) {
+  return snapshot->files[index].c_str();
+}
+
+std::uint64_t ariashim_snapshotFollowing(const AriaShimSnapshot* snapshot) { return snapshot->following; }
+
+int ariashim_snapshotFollowedByCount(const AriaShimSnapshot* snapshot) {
+  return static_cast<int>(snapshot->followedBy.size());
+}
+
+std::uint64_t ariashim_snapshotFollowedBy(const AriaShimSnapshot* snapshot, int index) {
+  return snapshot->followedBy[index];
+}
+
+} // extern "C"

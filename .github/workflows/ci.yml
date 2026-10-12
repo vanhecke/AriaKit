@@ -1,4 +1,7 @@
 name: CI
+# Fork PRs run as `pull_request`: read-only token, no secrets. Never switch to
+# `pull_request_target`. Runs for outside contributors wait for a maintainer to
+# click "Approve and run" (repo setting, applied by Scripts/github-settings.sh).
 on:
   push:
   pull_request:
@@ -16,6 +19,7 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with: { xcode-version: latest-stable }
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -36,6 +40,7 @@ jobs:
     container: swift:6.2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - run: apt-get update && apt-get install -y libaria2-0-dev pkg-config
       - run: swift test --parallel
       - run: swift run ariakit --help
