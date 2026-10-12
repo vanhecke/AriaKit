@@ -1,5 +1,6 @@
 #include "AriaShim.h"
 
+#include <signal.h>
 #include <exception>
 #include <mutex>
 
@@ -31,13 +32,28 @@ Result guarded(Result fallback, Body body) noexcept {
   }
 }
 
+// aria2c ignores SIGPIPE only when it installs its own signal handlers, which sessionNew
+// skips (useSignalHandler = false). Without this, a peer or server closing a socket
+// mid-write kills the host process. A handler the host installed is left alone.
+void ignoreSigpipeIfDefault() {
+#ifdef SIGPIPE
+  struct sigaction current {};
+  if (sigaction(SIGPIPE, nullptr, &current) == 0 && current.sa_handler == SIG_DFL) {
+    signal(SIGPIPE, SIG_IGN);
+  }
+#endif
+}
+
 } // namespace
 
 int libraryInit() {
   // libaria2 crashes if re-initialized after libraryDeinit, so init once and never deinit.
   static std::once_flag once;
   static int code = 0;
-  std::call_once(once, [] { code = guarded(-1, [] { return aria2::libraryInit(); }); });
+  std::call_once(once, [] {
+    ignoreSigpipeIfDefault();
+    code = guarded(-1, [] { return aria2::libraryInit(); });
+  });
   return code;
 }
 

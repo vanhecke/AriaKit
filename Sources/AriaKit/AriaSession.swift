@@ -8,6 +8,11 @@ import Synchronization
 /// call is queued onto the session thread and runs between event-loop
 /// iterations. An idle iteration can block for up to about one second, so a
 /// command may take that long to start. Call ``shutdown()`` when done.
+///
+/// The first session sets `SIGPIPE` to ignored for the whole process, unless the
+/// process already installed its own handler. Otherwise a server or peer closing a
+/// connection mid-write would kill the process; writes to closed pipes and sockets
+/// instead fail with `EPIPE`.
 public final class AriaSession: Sendable {
 
   // MARK: Lifecycle

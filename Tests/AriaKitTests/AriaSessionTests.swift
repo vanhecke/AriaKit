@@ -1,6 +1,9 @@
 import AriaKit
 import Foundation
 import Testing
+#if canImport(Glibc)
+import Glibc
+#endif
 
 /// libaria2 allows one session per process: every session test lives here, serialized.
 @Suite(.serialized, .timeLimit(.minutes(1)))
@@ -33,6 +36,22 @@ struct AriaSessionTests {
     await #expect(throws: AriaError.sessionAlreadyActive) {
       _ = try await AriaSession()
     }
+    await session.shutdown()
+  }
+
+  /// A server or peer closing a connection mid-write raised SIGPIPE and killed the host
+  /// process. With a session started, such a write must fail with EPIPE instead.
+  @Test
+  func writeToClosedPipeFailsInsteadOfKillingProcess() async throws {
+    let session = try await AriaSession()
+    var fds: [Int32] = [0, 0]
+    #expect(pipe(&fds) == 0)
+    close(fds[0])
+    let written = write(fds[1], "x", 1)
+    let error = errno
+    close(fds[1])
+    #expect(written == -1)
+    #expect(error == EPIPE)
     await session.shutdown()
   }
 
