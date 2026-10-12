@@ -14,6 +14,8 @@ Sources: http(s), ftp, sftp, and magnet URLs, URLs to `.torrent` / Metalink file
 local `.torrent`, `.metalink`, or `.meta4` files (drag them in; escaped spaces work).
 A magnet or `.torrent` URL shows its content as a follow-up row (`#2 continues #1`).
 Torrents stop when downloaded; pass `--seed` to keep seeding (aria2 default: ratio 1.0).
+Each download uses up to `--connections` (default 4, max 16) connections per server, in
+parts of at least 20 MB.
 
 Type `help` in the tool for `pause <n>`, `resume <n>`, `rm <n>`, `ls`, `quit`.
 
