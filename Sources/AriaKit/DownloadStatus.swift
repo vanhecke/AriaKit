@@ -14,6 +14,8 @@ public struct DownloadStatus: Hashable, Sendable {
     errorCode: Int,
     directory: String,
     files: [String],
+    following: DownloadID? = nil,
+    followedBy: [DownloadID] = [],
   ) {
     self.id = id
     self.state = state
@@ -24,6 +26,8 @@ public struct DownloadStatus: Hashable, Sendable {
     self.errorCode = errorCode
     self.directory = directory
     self.files = files
+    self.following = following
+    self.followedBy = followedBy
   }
 
   // MARK: Public
@@ -79,6 +83,11 @@ public struct DownloadStatus: Hashable, Sendable {
   public let directory: String
   /// Paths of the files this download writes. Empty until aria2 knows them.
   public let files: [String]
+  /// The download this one continues, e.g. the `.torrent` or magnet that produced it.
+  public let following: DownloadID?
+  /// Downloads aria2 started from this one's result: the content of a `.torrent` URL or
+  /// magnet link, or the files of a Metalink. Empty until this download completes.
+  public let followedBy: [DownloadID]
 
   /// Fraction downloaded in `0...1`, or `nil` while the size is unknown.
   public var progress: Double? {

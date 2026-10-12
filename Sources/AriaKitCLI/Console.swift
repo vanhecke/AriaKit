@@ -35,8 +35,8 @@ final class Console {
       }
     }
 
-    for input in initialInput {
-      await execute(ReplCommand.parse(input))
+    if !initialInput.isEmpty {
+      await execute(ReplCommand.add(initialInput))
     }
     render()
     for await chunk in InputReader.chunks() {
@@ -139,12 +139,9 @@ final class Console {
   private func execute(_ command: ReplCommand) async {
     do {
       switch command {
-      case .add(let urls):
-        for url in urls {
-          let id = try await session.add([url])
-          downloads.append(id)
-          sources[id] = url
-          note("#\(downloads.count) added \(url.absoluteString)")
+      case .add(let sources):
+        for source in sources {
+          try await add(source)
         }
 
       case .pause(let position):
@@ -183,9 +180,43 @@ final class Console {
     return downloads[position - 1]
   }
 
+  private func add(_ source: ReplCommand.Source) async throws {
+    let ids: [DownloadID] =
+      switch source {
+      case .url(let url): try await [session.add([url])]
+      case .torrent(let file): try await [session.addTorrent(file)]
+      case .metalink(let file): try await session.addMetalink(file)
+      }
+    let location = source.location.isFileURL ? source.location.path : source.location.absoluteString
+    for id in ids {
+      downloads.append(id)
+      sources[id] = source.location
+      note("#\(downloads.count) added \(location)")
+    }
+  }
+
+  /// aria2 continues a magnet link, `.torrent` URL, or Metalink URL as new downloads.
+  /// List them so they show progress and piped mode waits for them.
+  private func adoptFollowUps(of id: DownloadID) {
+    for child in statuses[id]?.followedBy ?? [] where !downloads.contains(child) {
+      adopt(child, continuing: id)
+    }
+  }
+
+  private func adopt(_ child: DownloadID, continuing parent: DownloadID) {
+    downloads.append(child)
+    sources[child] = sources[parent]
+    let parentLabel = downloads.firstIndex(of: parent).map { "#\($0 + 1)" } ?? "\(parent)"
+    note("#\(downloads.count) continues \(parentLabel)")
+  }
+
   private func handle(_ event: DownloadEvent) async {
     if let status = try? await session.status(of: event.id) {
       statuses[event.id] = status
+      if !downloads.contains(event.id), let parent = status.following, downloads.contains(parent) {
+        adopt(event.id, continuing: parent)
+      }
+      adoptFollowUps(of: event.id)
     }
     guard event.kind != .started else { return }
     let label = downloads.firstIndex(of: event.id).map { "#\($0 + 1)" } ?? "\(event.id)"
@@ -202,10 +233,15 @@ final class Console {
   }
 
   private func refresh() async {
-    for id in downloads {
+    var index = 0
+    // Not `for id in downloads`: adopted follow-ups extend the list and need a refresh too.
+    while index < downloads.count {
+      let id = downloads[index]
       if let status = try? await session.status(of: id) {
         statuses[id] = status
+        adoptFollowUps(of: id)
       }
+      index += 1
     }
   }
 

@@ -7,7 +7,7 @@ import Foundation
 struct AriaKitCommand: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "ariakit",
-    abstract: "Download files with libaria2. Type or pipe URLs while it runs; each starts right away.",
+    abstract: "Download files with libaria2. Type or pipe URLs and files while it runs; each starts right away.",
     discussion: ReplCommand.usage,
   )
 
@@ -20,7 +20,12 @@ struct AriaKitCommand: AsyncParsableCommand {
   @Option(name: .shortAndLong, help: "Maximum downloads running at once.")
   var maxConcurrent = 5
 
-  @Argument(help: "URLs to start downloading right away.")
+  @Flag(
+    help: "Keep seeding finished torrents until share ratio 1.0 (aria2's default). Without it, a torrent finishes once downloaded."
+  )
+  var seed = false
+
+  @Argument(help: "URLs or .torrent / .metalink files to start downloading right away.")
   var urls = [String]()
 
   func validate() throws {
@@ -36,10 +41,14 @@ struct AriaKitCommand: AsyncParsableCommand {
       return
     }
     let directory = dir ?? config.downloadDirectory ?? FileManager.default.currentDirectoryPath
-    let session = try await AriaSession(options: [
+    var options = [
       "dir": directory,
       "max-concurrent-downloads": String(maxConcurrent),
-    ])
+    ]
+    if !seed {
+      options["seed-time"] = "0"
+    }
+    let session = try await AriaSession(options: options)
     let interactive = isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1
     let succeeded = await Console(session: session, interactive: interactive).run(initialInput: urls)
     if !succeeded {

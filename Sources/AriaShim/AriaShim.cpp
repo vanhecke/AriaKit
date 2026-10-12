@@ -87,6 +87,26 @@ AddResult addUri(aria2::Session* session, const StringList& uris, const KeyVals&
   });
 }
 
+AddResult addTorrent(aria2::Session* session, const char* torrentFile, const KeyVals& options) {
+  return guarded(AddResult{-1, 0}, [&] {
+    aria2::A2Gid gid = 0;
+    int code = aria2::addTorrent(session, &gid, torrentFile, options);
+    return AddResult{code, gid};
+  });
+}
+
+AddManyResult addMetalink(aria2::Session* session, const char* metalinkFile, const KeyVals& options) {
+  return guarded(AddManyResult{-1, {}}, [&] {
+    std::vector<aria2::A2Gid> gids;
+    int code = aria2::addMetalink(session, &gids, metalinkFile, options);
+    return AddManyResult{code, std::vector<std::uint64_t>(gids.begin(), gids.end())};
+  });
+}
+
+int addedCount(const AddManyResult& result) { return static_cast<int>(result.gids.size()); }
+
+std::uint64_t addedGid(const AddManyResult& result, int index) { return result.gids[index]; }
+
 int removeDownload(aria2::Session* session, std::uint64_t gid, bool force) {
   return guarded(-1, [&] { return aria2::removeDownload(session, gid, force); });
 }
@@ -117,6 +137,9 @@ Snapshot snapshot(aria2::Session* session, std::uint64_t gid) {
     for (const aria2::FileData& file : handle->getFiles()) {
       result.files.push_back(file.path);
     }
+    result.following = handle->getFollowing();
+    const std::vector<aria2::A2Gid>& followedBy = handle->getFollowedBy();
+    result.followedBy.assign(followedBy.begin(), followedBy.end());
     aria2::deleteDownloadHandle(handle);
     return result;
   });
@@ -127,5 +150,9 @@ const char* snapshotDirectory(const Snapshot& snapshot) { return snapshot.dir.c_
 int snapshotFileCount(const Snapshot& snapshot) { return static_cast<int>(snapshot.files.size()); }
 
 const char* snapshotFile(const Snapshot& snapshot, int index) { return snapshot.files[index].c_str(); }
+
+int snapshotFollowedByCount(const Snapshot& snapshot) { return static_cast<int>(snapshot.followedBy.size()); }
+
+std::uint64_t snapshotFollowedBy(const Snapshot& snapshot, int index) { return snapshot.followedBy[index]; }
 
 } // namespace ariashim

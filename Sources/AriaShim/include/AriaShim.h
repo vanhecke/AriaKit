@@ -22,6 +22,12 @@ struct AddResult {
   std::uint64_t gid;
 };
 
+/// Result of `addMetalink`: `code` is 0 on success; one GID per file.
+struct AddManyResult {
+  int code;
+  std::vector<std::uint64_t> gids;
+};
+
 /// Snapshot of one download. `found` is false when aria2 no longer knows the GID.
 struct Snapshot {
   bool found;
@@ -33,6 +39,10 @@ struct Snapshot {
   int errorCode;
   std::string dir;
   StringList files;
+  /// GID this download continues (e.g. a torrent fetched by URL), 0 if none.
+  std::uint64_t following;
+  /// GIDs started from this download's result (torrent content, Metalink files).
+  std::vector<std::uint64_t> followedBy;
 };
 
 /// Initializes libaria2 once per process; later calls return the first result.
@@ -48,6 +58,10 @@ int runOnce(aria2::Session* session);
 int shutdown(aria2::Session* session, bool force);
 
 AddResult addUri(aria2::Session* session, const StringList& uris, const KeyVals& options);
+AddResult addTorrent(aria2::Session* session, const char* torrentFile, const KeyVals& options);
+AddManyResult addMetalink(aria2::Session* session, const char* metalinkFile, const KeyVals& options);
+int addedCount(const AddManyResult& result);
+std::uint64_t addedGid(const AddManyResult& result, int index);
 int removeDownload(aria2::Session* session, std::uint64_t gid, bool force);
 int pauseDownload(aria2::Session* session, std::uint64_t gid, bool force);
 int unpauseDownload(aria2::Session* session, std::uint64_t gid);
@@ -56,6 +70,8 @@ Snapshot snapshot(aria2::Session* session, std::uint64_t gid);
 const char* snapshotDirectory(const Snapshot& snapshot);
 int snapshotFileCount(const Snapshot& snapshot);
 const char* snapshotFile(const Snapshot& snapshot, int index);
+int snapshotFollowedByCount(const Snapshot& snapshot);
+std::uint64_t snapshotFollowedBy(const Snapshot& snapshot, int index);
 
 } // namespace ariashim
 

@@ -10,6 +10,11 @@ swift run ariakit --dir ~/Downloads               # live list; type or paste URL
 printf '%s\n' https://example.com/a.iso | swift run ariakit   # piped: exits when done
 ```
 
+Sources: http(s), ftp, sftp, and magnet URLs, URLs to `.torrent` / Metalink files, and
+local `.torrent`, `.metalink`, or `.meta4` files (drag them in; escaped spaces work).
+A magnet or `.torrent` URL shows its content as a follow-up row (`#2 continues #1`).
+Torrents stop when downloaded; pass `--seed` to keep seeding (aria2 default: ratio 1.0).
+
 Type `help` in the tool for `pause <n>`, `resume <n>`, `rm <n>`, `ls`, `quit`.
 
 ## The library
@@ -19,6 +24,8 @@ import AriaKit
 
 let session = try await AriaSession(options: ["dir": "/tmp"])
 let id = try await session.add([URL(string: "https://example.com/a.iso")!])
+// Also: session.addTorrent(fileURL), session.addMetalink(fileURL). A magnet or .torrent URL
+// completes once its metadata arrives; the content continues as status.followedBy.
 for await event in session.events where event.id == id && event.kind == .completed { break }
 await session.shutdown()
 ```

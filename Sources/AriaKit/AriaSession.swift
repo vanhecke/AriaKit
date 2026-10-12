@@ -40,7 +40,10 @@ public final class AriaSession: Sendable {
   /// Queues a download of one file from one or more mirrors of it.
   ///
   /// - Parameters:
-  ///   - urls: Mirrors of the same file (HTTP(S), FTP, SFTP, or a magnet link).
+  ///   - urls: Mirrors of the same file: HTTP(S), FTP, or SFTP URLs, or one magnet link.
+  ///     A magnet link or a URL to a `.torrent` / Metalink file completes once that
+  ///     metadata is fetched; the content continues as new downloads listed in
+  ///     ``DownloadStatus/followedBy``.
   ///   - options: Per-download aria2 options, such as `["out": "name.iso"]`.
   public func add(_ urls: [URL], options: [String: String] = [:]) async throws -> DownloadID {
     try await perform { session in
@@ -51,6 +54,37 @@ public final class AriaSession: Sendable {
       let result = ariashim.addUri(session, uris, Self.keyVals(options))
       try Self.check(result.code)
       return DownloadID(rawValue: result.gid)
+    }
+  }
+
+  /// Queues the download a local `.torrent` file describes.
+  ///
+  /// A `.torrent` reachable by URL can go to ``add(_:options:)`` instead: aria2
+  /// fetches it and continues with the content as a new download (see
+  /// ``DownloadStatus/followedBy``).
+  ///
+  /// - Parameters:
+  ///   - torrentFile: Path of the `.torrent` file.
+  ///   - options: Per-download aria2 options, such as `["seed-time": "0"]`.
+  public func addTorrent(_ torrentFile: URL, options: [String: String] = [:]) async throws -> DownloadID {
+    try await perform { session in
+      let result = ariashim.addTorrent(session, torrentFile.path, Self.keyVals(options))
+      try Self.check(result.code)
+      return DownloadID(rawValue: result.gid)
+    }
+  }
+
+  /// Queues every file a local Metalink (`.metalink` / `.meta4`) document describes.
+  ///
+  /// - Parameters:
+  ///   - metalinkFile: Path of the Metalink document.
+  ///   - options: Per-download aria2 options, applied to each file.
+  /// - Returns: One download per file, in document order.
+  public func addMetalink(_ metalinkFile: URL, options: [String: String] = [:]) async throws -> [DownloadID] {
+    try await perform { session in
+      let result = ariashim.addMetalink(session, metalinkFile.path, Self.keyVals(options))
+      try Self.check(result.code)
+      return (0 ..< ariashim.addedCount(result)).map { DownloadID(rawValue: ariashim.addedGid(result, $0)) }
     }
   }
 
@@ -86,6 +120,10 @@ public final class AriaSession: Sendable {
         errorCode: Int(snapshot.errorCode),
         directory: String(cString: ariashim.snapshotDirectory(snapshot)),
         files: (0 ..< ariashim.snapshotFileCount(snapshot)).map { String(cString: ariashim.snapshotFile(snapshot, $0)) },
+        following: snapshot.following == 0 ? nil : DownloadID(rawValue: snapshot.following),
+        followedBy: (0 ..< ariashim.snapshotFollowedByCount(snapshot)).map {
+          DownloadID(rawValue: ariashim.snapshotFollowedBy(snapshot, $0))
+        },
       )
     }
   }
