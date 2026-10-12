@@ -39,6 +39,21 @@ struct AriaSessionTests {
     await session.shutdown()
   }
 
+  /// Each call used to wait out aria2's up-to-1 s idle poll (5 calls ≈ 5 s). Calls made
+  /// right after the previous one finishes now run without that wait.
+  @Test
+  func chainedCallsDoNotWaitForIdlePoll() async throws {
+    let session = try await AriaSession()
+    _ = try? await session.status(of: DownloadID(rawValue: 1)) // may wait for the poll
+    let clock = ContinuousClock()
+    let start = clock.now
+    for _ in 0 ..< 5 {
+      _ = try? await session.status(of: DownloadID(rawValue: 1))
+    }
+    #expect(clock.now - start < .milliseconds(500))
+    await session.shutdown()
+  }
+
   /// A server or peer closing a connection mid-write raised SIGPIPE and killed the host
   /// process. With a session started, such a write must fail with EPIPE instead.
   @Test
@@ -63,7 +78,12 @@ struct AriaSessionTests {
     let session = try await AriaSession(options: Self.offlineOptions(directory))
 
     let id = try await session.addTorrent(torrent)
-    let status = try await session.status(of: id)
+    // aria2 reports the size once it starts the download, not while it is still waiting.
+    var status = try await session.status(of: id)
+    while status.state == .waiting {
+      try await Task.sleep(for: .milliseconds(50))
+      status = try await session.status(of: id)
+    }
     #expect(status.totalLength == 1)
     #expect(status.files.map { URL(fileURLWithPath: $0).lastPathComponent } == ["a.txt"])
 

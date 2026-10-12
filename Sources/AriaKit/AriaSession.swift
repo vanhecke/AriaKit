@@ -6,8 +6,10 @@ import Synchronization
 ///
 /// libaria2 allows one session per process and is not thread-safe, so every
 /// call is queued onto the session thread and runs between event-loop
-/// iterations. An idle iteration can block for up to about one second, so a
-/// command may take that long to start. Call ``shutdown()`` when done.
+/// iterations. A call made within 10 ms of the previous one finishing runs
+/// right away. Otherwise, while no download has network activity, aria2's
+/// event loop sleeps up to one second and cannot be woken from outside, so the
+/// call may wait that long. Call ``shutdown()`` when done.
 ///
 /// The first session sets `SIGPIPE` to ignored for the whole process, unless the
 /// process already installed its own handler. Otherwise a server or peer closing a
@@ -188,8 +190,14 @@ public final class AriaSession: Sendable {
 
     var shutdownScheduled = false
     while true {
-      for command in mailbox.takeCommands() {
-        command.run(session)
+      var batch = mailbox.takeCommands()
+      while !batch.isEmpty {
+        for command in batch {
+          command.run(session)
+        }
+        // A caller often makes its next call right after this result. Catch it before
+        // runOnce, whose poll can block for up to 1 s and cannot be woken from outside.
+        batch = mailbox.waitForCommands(upTo: .milliseconds(10))
       }
       if !shutdownScheduled, mailbox.isShutdownRequested {
         _ = ariashim.shutdown(session, false)
@@ -257,6 +265,8 @@ private final class Mailbox: Sendable {
     }
     if !accepted {
       command.cancel()
+    } else {
+      arrived.signal()
     }
   }
 
@@ -264,6 +274,16 @@ private final class Mailbox: Sendable {
     state.withLock { state in
       defer { state.commands.removeAll() }
       return state.commands
+    }
+  }
+
+  /// Takes the queued commands, waiting up to `timeout` for one to arrive if none are queued.
+  func waitForCommands(upTo timeout: DispatchTimeInterval) -> [Command] {
+    let deadline = DispatchTime.now() + timeout
+    while true {
+      let commands = takeCommands()
+      // A signal may be left over from a command already taken: then just wait again.
+      guard commands.isEmpty, arrived.wait(timeout: deadline) == .success else { return commands }
     }
   }
 
@@ -308,5 +328,7 @@ private final class Mailbox: Sendable {
   }
 
   private let state = Mutex(State())
+  /// Signaled once per enqueued command.
+  private let arrived = DispatchSemaphore(value: 0)
 
 }

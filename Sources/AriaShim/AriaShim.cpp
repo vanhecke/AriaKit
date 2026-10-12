@@ -32,6 +32,17 @@ Result guarded(Result fallback, Body body) noexcept {
   }
 }
 
+// libaria2's add functions only reserve the download; the engine notices on its next
+// iteration, after a poll that blocks up to 1 s, and starts it one refresh cycle (1 s)
+// later. Pausing a still-waiting download only sets a flag plus a zero refresh interval;
+// unpausing clears the flag. Net effect: no state change, no event, and the next
+// iteration neither blocks nor waits for the refresh cycle.
+void startPromptly(aria2::Session* session, aria2::A2Gid gid) {
+  if (aria2::pauseDownload(session, gid, false) == 0) {
+    aria2::unpauseDownload(session, gid);
+  }
+}
+
 // aria2c ignores SIGPIPE only when it installs its own signal handlers, which sessionNew
 // skips (useSignalHandler = false). Without this, a peer or server closing a socket
 // mid-write kills the host process. A handler the host installed is left alone.
@@ -99,6 +110,9 @@ AddResult addUri(aria2::Session* session, const StringList& uris, const KeyVals&
   return guarded(AddResult{-1, 0}, [&] {
     aria2::A2Gid gid = 0;
     int code = aria2::addUri(session, &gid, uris, options);
+    if (code == 0) {
+      startPromptly(session, gid);
+    }
     return AddResult{code, gid};
   });
 }
@@ -107,6 +121,9 @@ AddResult addTorrent(aria2::Session* session, const char* torrentFile, const Key
   return guarded(AddResult{-1, 0}, [&] {
     aria2::A2Gid gid = 0;
     int code = aria2::addTorrent(session, &gid, torrentFile, options);
+    if (code == 0) {
+      startPromptly(session, gid);
+    }
     return AddResult{code, gid};
   });
 }
@@ -115,6 +132,9 @@ AddManyResult addMetalink(aria2::Session* session, const char* metalinkFile, con
   return guarded(AddManyResult{-1, {}}, [&] {
     std::vector<aria2::A2Gid> gids;
     int code = aria2::addMetalink(session, &gids, metalinkFile, options);
+    for (aria2::A2Gid gid : gids) {
+      startPromptly(session, gid);
+    }
     return AddManyResult{code, std::vector<std::uint64_t>(gids.begin(), gids.end())};
   });
 }
