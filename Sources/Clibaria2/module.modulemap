@@ -1,0 +1,6 @@
+module Clibaria2 [system] {
+  requires cplusplus
+  header "shim.h"
+  link "aria2"
+  export *
+}

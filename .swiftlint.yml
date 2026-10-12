@@ -1,0 +1,50 @@
+# Airbnb-based correctness lint, plus force-unwrap and architecture rules.
+# Layout belongs to SwiftFormat (.swiftformat). Do not re-enable trailing_comma.
+
+only_rules:
+  - fatal_error_message
+  - implicitly_unwrapped_optional
+  - unused_optional_binding
+  - unowned_variable_capture
+  - superfluous_disable_command
+  - invalid_swiftlint_command
+  - force_unwrapping
+  - force_cast
+  - force_try
+  - custom_rules
+
+excluded:
+  - Carthage
+  - Pods
+  - .build
+  - Public
+  - Scripts
+  - "AriaKit.xcodeproj"
+
+indentation: 2
+
+custom_rules:
+  no_direct_standard_out_logs:
+    name: "no print"
+    regex: "(\\bprint|\\bdebugPrint|\\bdump|Swift\\.print|_printChanges)\\s*\\("
+    match_kinds: [identifier]
+    message: "Log through Logger, not print/debugPrint/dump."
+    severity: error
+  no_file_literal:
+    name: "no #file"
+    regex: "(#file\\b)"
+    match_kinds: [keyword]
+    message: "Use #fileID by default, or #filePath when you need the path."
+    severity: error
+  no_unchecked_sendable:
+    name: "no @unchecked Sendable"
+    regex: "@unchecked Sendable"
+    match_kinds: [attribute.builtin, typeidentifier]
+    message: "Fix isolation instead of @unchecked Sendable. If unavoidable, // justification: naming the mechanism."
+    severity: error
+  no_alamofire:
+    name: "no Alamofire"
+    regex: "\\bimport Alamofire\\b|\\bAlamofire\\b"
+    message: "Use URLSession. Alamofire is not a dependency of this project."
+    excluded_match_kinds: [comment, doccomment, doccomment.field]
+    severity: error

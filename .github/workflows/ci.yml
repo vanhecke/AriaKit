@@ -1,0 +1,41 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: ci
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with: { xcode-version: latest-stable }
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: spm-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: spm-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .deps/libaria2
+          key: libaria2-${{ runner.os }}-${{ hashFiles('Scripts/libaria2.sh') }}
+      - run: brew install swiftlint swiftformat pkgconf c-ares libssh2 sqlite openssl@3
+      - run: ./Scripts/ci.sh
+
+  linux:
+    name: linux
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: apt-get update && apt-get install -y libaria2-0-dev pkg-config
+      - run: swift test --parallel
+      - run: swift run ariakit --help

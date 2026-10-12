@@ -1,0 +1,19 @@
+[mcp_servers.xcode]
+command = "xcrun"
+args = ["mcpbridge"]
+enabled = true
+
+[mcp_servers.XcodeBuildMCP]
+command = "npx"
+args = ["-y", "xcodebuildmcp@2.7.0", "mcp"]
+enabled = true
+startup_timeout_sec = 90
+
+[mcp_servers.XcodeBuildMCP.env]
+XCODEBUILDMCP_ENABLED_WORKFLOWS = "session-management,project-discovery,macos,swift-package,xcode-ide,utilities,coverage,debugging,ui-automation"
+
+[mcp_servers.apple-docs]
+command = "npx"
+args = ["-y", "@kimsungwhee/apple-docs-mcp@1.0.26"]
+enabled = true
+startup_timeout_sec = 90
