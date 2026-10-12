@@ -31,9 +31,17 @@ struct DownloadStatusTests {
     #expect(DownloadEvent(rawEvent: 0, id: id) == nil)
   }
 
+  @Test
+  func errorDescriptionExplainsAria2Codes() {
+    #expect(status().errorDescription == nil)
+    #expect(status(errorCode: 22).errorDescription == "server returned an HTTP error or unexpected response (e.g. 403, 5xx)")
+    #expect(status(errorCode: 32).errorDescription == "checksum validation failed")
+    #expect(status(errorCode: 99).errorDescription == "unrecognized aria2 error")
+  }
+
   // MARK: Private
 
-  private func status(total: Int64, completed: Int64) -> DownloadStatus {
+  private func status(total: Int64 = 0, completed: Int64 = 0, errorCode: Int = 0) -> DownloadStatus {
     DownloadStatus(
       id: DownloadID(rawValue: 1),
       state: .active,
@@ -41,7 +49,7 @@ struct DownloadStatusTests {
       completedLength: completed,
       downloadSpeed: 0,
       uploadSpeed: 0,
-      errorCode: 0,
+      errorCode: errorCode,
       directory: "/tmp",
       files: [],
     )

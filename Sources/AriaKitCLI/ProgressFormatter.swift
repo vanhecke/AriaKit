@@ -25,8 +25,18 @@ enum ProgressFormatter {
     return String(repeating: " ", count: max(0, 3 - String(value).count)) + "\(value)%"
   }
 
-  static func row(position: Int, status: DownloadStatus) -> String {
-    let name = status.files.first.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0).lastPathComponent } ?? "…"
+  /// The file's name once aria2 knows it, else the last path component (or host) of the source URL.
+  static func name(status: DownloadStatus?, source: URL?) -> String {
+    if let path = status?.files.first, !path.isEmpty {
+      return URL(fileURLWithPath: path).lastPathComponent
+    }
+    guard let source else { return "…" }
+    let component = source.lastPathComponent
+    return component.isEmpty || component == "/" ? source.host ?? source.absoluteString : component
+  }
+
+  static func row(position: Int, status: DownloadStatus, source: URL?) -> String {
+    let name = name(status: status, source: source)
     let state = status.state == .error ? "error \(status.errorCode)" : "\(status.state)"
     let size = "\(bytes(status.completedLength)) / \(status.totalLength > 0 ? bytes(status.totalLength) : "?")"
     let speed = status.state == .active ? "\(bytes(Int64(status.downloadSpeed)))/s" : ""

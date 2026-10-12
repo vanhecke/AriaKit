@@ -86,4 +86,53 @@ public struct DownloadStatus: Hashable, Sendable {
     return Double(completedLength) / Double(totalLength)
   }
 
+  /// What ``errorCode`` means, per aria2's exit-status table; `nil` when there is no error.
+  ///
+  /// libaria2 exposes only the code. Details such as the HTTP status are in aria2's
+  /// log (the `log` option).
+  public var errorDescription: String? {
+    guard errorCode != 0 else { return nil }
+    guard Self.errorDescriptions.indices.contains(errorCode) else { return "unrecognized aria2 error" }
+    return Self.errorDescriptions[errorCode]
+  }
+
+  // MARK: Private
+
+  /// Indexed by aria2 `error_code::Value` (src/error_code.h); index 0 is success.
+  private static let errorDescriptions = [
+    "finished",
+    "unknown error",
+    "timed out",
+    "resource not found",
+    "resource not found too many times (max-file-not-found)",
+    "aborted: download too slow (lowest-speed-limit)",
+    "network problem",
+    "unfinished when the session stopped",
+    "server cannot resume, but resume was required",
+    "not enough disk space",
+    "piece length differs from the .aria2 control file",
+    "this file is already being downloaded",
+    "this torrent is already being downloaded",
+    "file already exists",
+    "could not rename file",
+    "could not open existing file",
+    "could not create or truncate file",
+    "file I/O error",
+    "could not create directory",
+    "could not resolve host name",
+    "could not parse Metalink document",
+    "FTP command failed",
+    "server returned an HTTP error or unexpected response (e.g. 403, 5xx)",
+    "too many redirects",
+    "HTTP authorization failed",
+    "could not parse bencoded file",
+    "torrent file is corrupt or incomplete",
+    "bad magnet URI",
+    "bad or unrecognized option",
+    "server temporarily overloaded or in maintenance",
+    "could not parse JSON-RPC request",
+    "removed",
+    "checksum validation failed",
+  ]
+
 }

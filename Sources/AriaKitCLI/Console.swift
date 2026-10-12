@@ -75,6 +75,7 @@ final class Console {
   private let interactive: Bool
   private var downloads = [DownloadID]()
   private var statuses = [DownloadID: DownloadStatus]()
+  private var sources = [DownloadID: URL]()
   private var messages = [String]()
   private var line = [UInt8]()
   private var escapeState = EscapeState.none
@@ -142,6 +143,7 @@ final class Console {
         for url in urls {
           let id = try await session.add([url])
           downloads.append(id)
+          sources[id] = url
           note("#\(downloads.count) added \(url.absoluteString)")
         }
 
@@ -187,9 +189,13 @@ final class Console {
     }
     guard event.kind != .started else { return }
     let label = downloads.firstIndex(of: event.id).map { "#\($0 + 1)" } ?? "\(event.id)"
-    let name = statuses[event.id]?.files.first.map { URL(fileURLWithPath: $0).lastPathComponent } ?? ""
+    let name = ProgressFormatter.name(status: statuses[event.id], source: sources[event.id])
     switch event.kind {
-    case .failed: fail("\(label) failed (aria2 error \(statuses[event.id]?.errorCode ?? -1)) \(name)")
+    case .failed:
+      let status = statuses[event.id]
+      let reason = status?.errorDescription ?? "unknown error"
+      fail("\(label) \(name) failed: \(reason) (aria2 error \(status?.errorCode ?? -1))")
+
     default: note("\(label) \(event.kind) \(name)")
     }
     render()
@@ -212,7 +218,11 @@ final class Console {
 
   private func listDownloads() {
     for (index, id) in downloads.enumerated() {
-      let row = statuses[id].map { ProgressFormatter.row(position: index + 1, status: $0) } ?? "#\(index + 1) \(id)"
+      let row = statuses[id].map { ProgressFormatter.row(
+        position: index + 1,
+        status: $0,
+        source: sources[id],
+      ) } ?? "#\(index + 1) \(id)"
       Terminal.write(row + "\n")
     }
   }
@@ -237,7 +247,9 @@ final class Console {
     guard interactive else { return }
     var rows = ["ariakit — \(downloads.count) download(s). Type a URL, or help.", ""]
     for (index, id) in downloads.enumerated() {
-      rows.append(statuses[id].map { ProgressFormatter.row(position: index + 1, status: $0) } ?? "#\(index + 1) \(id)")
+      rows
+        .append(statuses[id]
+          .map { ProgressFormatter.row(position: index + 1, status: $0, source: sources[id]) } ?? "#\(index + 1) \(id)")
     }
     rows.append("")
     rows += messages.suffix(8)
