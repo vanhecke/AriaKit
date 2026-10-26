@@ -1,5 +1,5 @@
 {
-  "originHash" : "e0c7fd3947de21d03b453b42ae5e2f79da972a3037965a7638a917597a9d6e41",
+  "originHash" : "6fa2cde8bee840fc1c1e577b69fe906cead35632056c4f3c3bf6ea568e050b68",
   "pins" : [
     {
       "identity" : "swift-argument-parser",
@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-configuration.git",
       "state" : {
-        "revision" : "8bae88f79dbddec793390c5bf3e2abb4ac2ece42",
-        "version" : "1.2.2"
+        "revision" : "4e916072eb34f3c136ae64bd2859d6072cdb1b6e",
+        "version" : "1.3.0"
       }
     },
     {
